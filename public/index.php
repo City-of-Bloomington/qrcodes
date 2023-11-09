@@ -1,55 +1,50 @@
 <?php
 /**
- * @copyright 2015-2022 City of Bloomington, Indiana
+ * @copyright 2023 City of Bloomington, Indiana
  * @license http://www.gnu.org/licenses/agpl.txt GNU/AGPL, see LICENSE
  */
 /**
  * Grab a timestamp for calculating process time
  */
 declare (strict_types=1);
+use Web\Authentication\Auth;
 
 $startTime = microtime(true);
 
-include '../vendor/autoload.php';
+include '../src/Web/bootstrap.php';
 
-$url = $_GET['url'];
+$matcher = $ROUTES->getMatcher();
+$route   = $matcher->match(GuzzleHttp\Psr7\ServerRequest::fromGlobals());
 
-use Endroid\QrCode\Color\Color;
-use Endroid\QrCode\Encoding\Encoding;
-use Endroid\QrCode\ErrorCorrectionLevel\ErrorCorrectionLevelLow;
-use Endroid\QrCode\QrCode;
-use Endroid\QrCode\Label\Label;
-use Endroid\QrCode\Logo\Logo;
-use Endroid\QrCode\RoundBlockSizeMode\RoundBlockSizeModeMargin;
-use Endroid\QrCode\Writer\PngWriter;
-use Endroid\QrCode\Writer\ValidationException;
+if ($route) {
+    $controller = $route->handler;
+    $c = new $controller($DI);
+    if (is_callable($c)) {
+        $view = $c($route->attributes);
+    }
+    else {
+        $f = $matcher->getFailedRoute();
+        $view = new \Web\Views\NotFoundView();
+    }
+}
+else {
+    $f = $matcher->getFailedRoute();
+    $view = new \Web\Views\NotFoundView();
+}
 
-$writer = new PngWriter();
 
-// Create QR code
-$qrCode = QrCode::create($url)
-    ->setEncoding(new Encoding('UTF-8'))
-    ->setErrorCorrectionLevel(new ErrorCorrectionLevelLow())
-    ->setSize(300)
-    ->setMargin(10)
-    ->setRoundBlockSizeMode(new RoundBlockSizeModeMargin())
-    ->setForegroundColor(new Color(0, 0, 0))
-    ->setBackgroundColor(new Color(255, 255, 255));
+echo $view->render();
 
-// // Create generic logo
-// $logo = Logo::create(__DIR__.'/assets/symfony.png')
-//     ->setResizeToWidth(50);
-//
-// // Create generic label
-// $label = Label::create('Label')
-//     ->setTextColor(new Color(255, 0, 0));
+// Append some useful stats to the output of HTML pages
+if ($view->outputFormat === 'html') {
+    # Calculate the process time
+    $endTime = microtime(true);
+    $processTime = $endTime - $startTime;
+    echo "<!-- Process Time: $processTime -->\n";
 
-$result = $writer->write($qrCode);
-
-// Validate the result
-// $writer->validateResult($result, 'Life is too short to be generating QR codes');
-
-#$result->saveToFile('./qr.png');
-header('Content-Type: '.$result->getMimeType());
-echo $result->getString();
-
+    $size   = ['B','kB','MB','GB','TB','PB','EB','ZB','YB'];
+    $bytes  = memory_get_peak_usage();
+    $factor = floor( (strlen("$bytes") - 1) / 3);
+    $memory = sprintf("%.2f", $bytes / pow(1024, $factor)) . @$size[$factor];
+    echo "<!-- Memory: $memory -->";
+}

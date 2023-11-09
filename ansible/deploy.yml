@@ -1,0 +1,75 @@
+---
+- hosts: "qrcodes"
+  become: "yes"
+  roles:
+    - "City-of-Bloomington.php"
+
+  tasks:
+    - name: "Install dependencies"
+      apt:
+        name: "{{ packages }}"
+        state: "present"
+      vars:
+        packages:
+          - 'imagemagick'
+          - "php-imagick"
+
+    - name: "Extract release"
+      unarchive:
+        src: "{{ qrcodes_archive_path }}"
+        dest: "/usr/local/src"
+      register: "release"
+
+    - name: "Remove old release"
+      file:
+        path: "{{ qrcodes_install_path }}"
+        state: "absent"
+      when: "release.changed"
+
+    - name: "Create directories"
+      file:
+        path: "{{ item }}"
+        state: "directory"
+        owner: "www-data"
+        group: "staff"
+        mode:  "u=rwX,g=rwXs,o=rX"
+      with_items:
+        - "{{ qrcodes_install_path }}"
+        - "{{ qrcodes_site_home    }}"
+        - "/var/log/cron"
+
+    - name: "Install release"
+      command: "rsync -rl /usr/local/src/qrcodes/ {{ qrcodes_install_path }}/"
+      when: "release.changed"
+
+    - name: "Update site_home"
+      command: "rsync -rl /usr/local/src/qrcodes/data/ {{ qrcodes_site_home }}/"
+      when: "release.changed"
+
+    - name: "Apache configuration"
+      template:
+        src:  "apache.conf"
+        dest: "/etc/apache2/sites-enabled/conf.d/qrcodes.conf"
+      notify: "apache_restart"
+
+    - name: "Install site_config"
+      template:
+        src:  "site_config.j2"
+        dest: "{{ qrcodes_site_home }}/site_config.php"
+
+    - name: "Update directory ownership"
+      command: "chown -R www-data:staff {{ item }}"
+      args:
+        warn: "no"
+      with_items:
+        - "{{ qrcodes_install_path }}"
+        - "{{ qrcodes_site_home    }}"
+
+    - name: "Update directory permission"
+      command: "chmod -R u=rwX,g=rwX,o=rX {{ item }}"
+      args:
+        warn: "no"
+      with_items:
+        - "{{ qrcodes_install_path }}"
+        - "{{ qrcodes_site_home    }}"
+...
